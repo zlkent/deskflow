@@ -25,8 +25,8 @@
 #include "server/ClientProxyUnknown.h"
 #include "server/PrimaryClient.h"
 
-#ifdef _WIN32
 #include <algorithm>
+#ifdef _WIN32
 #include <array>
 #endif
 #include <cmath>
@@ -618,98 +618,108 @@ BaseClientProxy *Server::mapToNeighbor(BaseClientProxy *src, Direction srcSide, 
 
   assert(src != nullptr);
 
+  // Preserve only the distance travelled past the source edge. Screen
+  // coordinates are local to each machine, so carrying the source's absolute
+  // coordinate into the destination makes a multi-monitor primary screen
+  // enter a single-monitor client far from its edge.
+  int32_t srcX;
+  int32_t srcY;
+  int32_t srcWidth;
+  int32_t srcHeight;
+  src->getShape(srcX, srcY, srcWidth, srcHeight);
+
+  int32_t overflow;
+  switch (srcSide) {
+    using enum Direction;
+  case Left:
+    overflow = srcX - 1 - x;
+    break;
+  case Right:
+    overflow = x - (srcX + srcWidth);
+    break;
+  case Top:
+    overflow = srcY - 1 - y;
+    break;
+  case Bottom:
+    overflow = y - (srcY + srcHeight);
+    break;
+  case NoDirection:
+    assert(0 && "bad direction");
+    return nullptr;
+  }
+  overflow = std::max(overflow, 0);
+
   // get the first neighbor
   BaseClientProxy *dst = getNeighbor(src, srcSide, x, y);
   if (dst == nullptr) {
     return nullptr;
   }
 
-  // get the source screen's size
+  // Walk through any screens crossed by a large motion. The coordinate along
+  // the shared edge was already mapped by getNeighbor(); only the coordinate
+  // perpendicular to that edge needs to be recalculated.
   int32_t dx;
   int32_t dy;
   int32_t dw;
   int32_t dh;
   BaseClientProxy *lastGoodScreen = src;
-  lastGoodScreen->getShape(dx, dy, dw, dh);
+  while (dst != nullptr) {
+    lastGoodScreen = dst;
+    dst->getShape(dx, dy, dw, dh);
+    const int32_t length = (srcSide == Direction::Left || srcSide == Direction::Right) ? dw : dh;
 
-  // find destination screen, adjusting x or y (but not both).  the
-  // searches are done in a sort of canonical screen space where
-  // the upper-left corner is 0,0 for each screen.  we adjust from
-  // actual to canonical position on entry to and from canonical to
-  // actual on exit from the search.
-  switch (srcSide) {
-    using enum Direction;
-  case Left:
-    x -= dx;
-    while (dst != nullptr) {
-      lastGoodScreen = dst;
-      lastGoodScreen->getShape(dx, dy, dw, dh);
-      x += dw;
-      if (x >= 0) {
+    if (overflow < length) {
+      switch (srcSide) {
+        using enum Direction;
+      case Left:
+        x = dx + dw - 1 - overflow;
         break;
-      }
-      LOG_VERBOSE("skipping over screen %s", getName(dst).c_str());
-      dst = getNeighbor(lastGoodScreen, srcSide, x, y);
-    }
-    assert(lastGoodScreen != nullptr);
-    x += dx;
-    break;
-
-  case Right:
-    x -= dx;
-    while (dst != nullptr) {
-      x -= dw;
-      lastGoodScreen = dst;
-      lastGoodScreen->getShape(dx, dy, dw, dh);
-      if (x < dw) {
+      case Right:
+        x = dx + overflow;
         break;
-      }
-      LOG_VERBOSE("skipping over screen %s", getName(dst).c_str());
-      dst = getNeighbor(lastGoodScreen, srcSide, x, y);
-    }
-    assert(lastGoodScreen != nullptr);
-    x += dx;
-    break;
-
-  case Top:
-    y -= dy;
-    while (dst != nullptr) {
-      lastGoodScreen = dst;
-      lastGoodScreen->getShape(dx, dy, dw, dh);
-      y += dh;
-      if (y >= 0) {
+      case Top:
+        y = dy + dh - 1 - overflow;
         break;
-      }
-      LOG_VERBOSE("skipping over screen %s", getName(dst).c_str());
-      dst = getNeighbor(lastGoodScreen, srcSide, x, y);
-    }
-    assert(lastGoodScreen != nullptr);
-    y += dy;
-    break;
-
-  case Bottom:
-    y -= dy;
-    while (dst != nullptr) {
-      y -= dh;
-      lastGoodScreen = dst;
-      lastGoodScreen->getShape(dx, dy, dw, dh);
-      if (y < dh) {
+      case Bottom:
+        y = dy + overflow;
         break;
+      case NoDirection:
+        assert(0 && "bad direction");
+        return nullptr;
       }
-      LOG_VERBOSE("skipping over screen %s", getName(dst).c_str());
-      dst = getNeighbor(lastGoodScreen, srcSide, x, y);
+      break;
     }
-    assert(lastGoodScreen != nullptr);
-    y += dy;
-    break;
 
-  case NoDirection:
-    assert(0 && "bad direction");
-    return nullptr;
+    overflow -= length;
+    LOG_VERBOSE("skipping over screen %s", getName(dst).c_str());
+    dst = getNeighbor(lastGoodScreen, srcSide, x, y);
   }
 
-  // save destination screen
+  // If a motion crossed the last configured neighbor, stop at its far edge.
+  // This retains the existing behavior of selecting the last reachable screen
+  // without passing an out-of-bounds coordinate to the client.
   assert(lastGoodScreen != nullptr);
+  if (dst == nullptr) {
+    lastGoodScreen->getShape(dx, dy, dw, dh);
+    switch (srcSide) {
+      using enum Direction;
+    case Left:
+      x = dx;
+      break;
+    case Right:
+      x = dx + dw - 1;
+      break;
+    case Top:
+      y = dy;
+      break;
+    case Bottom:
+      y = dy + dh - 1;
+      break;
+    case NoDirection:
+      assert(0 && "bad direction");
+      return nullptr;
+    }
+  }
   dst = lastGoodScreen;
 
   // if entering primary screen then be sure to move in far enough
