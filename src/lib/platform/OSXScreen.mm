@@ -592,12 +592,6 @@ void OSXScreen::fakeMouseMove(int32_t x, int32_t y)
   pos.y = y;
   postMouseEvent(pos);
 
-  // CGEventPost delivers movement to applications, but it does not reliably
-  // update the visible system cursor on recent macOS versions. Keep the
-  // hardware cursor in sync with the absolute coordinate received from the
-  // server as well.
-  warpCursor(static_cast<int32_t>(pos.x), static_cast<int32_t>(pos.y));
-
   // save new cursor position
   m_xCursor = static_cast<int32_t>(pos.x);
   m_yCursor = static_cast<int32_t>(pos.y);
