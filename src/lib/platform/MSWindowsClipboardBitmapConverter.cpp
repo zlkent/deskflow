@@ -37,8 +37,8 @@ std::string normaliseBitfieldsDib(const std::string &data)
       width > 0 && absoluteHeight > 0
           ? sizeof(BITMAPINFOHEADER) + static_cast<uint64_t>(width) * static_cast<uint64_t>(absoluteHeight) * 4
           : 0;
-  if (header->biSize > sizeof(BITMAPINFOHEADER) && header->biSize <= data.size() && header->biPlanes == 1 &&
-      header->biBitCount == 32 && header->biCompression == BI_BITFIELDS && expectedMalformedSize == data.size()) {
+  if (header->biSize > sizeof(BITMAPINFOHEADER) && header->biPlanes == 1 && header->biBitCount == 32 &&
+      header->biCompression == BI_BITFIELDS && expectedMalformedSize == data.size()) {
     std::string result = data.substr(0, sizeof(BITMAPINFOHEADER));
     qToLittleEndian<quint32>(sizeof(BITMAPINFOHEADER), reinterpret_cast<quint8 *>(&result[0]));
     qToLittleEndian<quint32>(BI_RGB, reinterpret_cast<quint8 *>(&result[0]) + 16);
