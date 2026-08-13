@@ -15,6 +15,7 @@ private Q_SLOTS:
   void open();
   void singleFormat();
   void formatConvert_UTF8();
+  void formatConvert_BMPMalformedV5Header();
 
 private:
   Log m_log;
