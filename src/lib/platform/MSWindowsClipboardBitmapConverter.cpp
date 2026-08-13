@@ -25,6 +25,27 @@ std::string normaliseBitfieldsDib(const std::string &data)
 
   const auto *header = reinterpret_cast<const BITMAPINFOHEADER *>(data.data());
 
+  // macOS may label a BITMAPINFOHEADER-sized pixel payload as a V5 DIB. The
+  // observed layout is exactly 40 bytes plus 32-bit pixels, but biSize says
+  // 124 and BI_BITFIELDS is set. Windows subsequently treats the first pixels
+  // as V5 colour masks. Detect this contradictory layout from its byte count
+  // and turn it into a normal 32-bit BI_RGB DIB before publishing CF_DIB.
+  const auto width = static_cast<int64_t>(header->biWidth);
+  const auto height = static_cast<int64_t>(header->biHeight);
+  const auto absoluteHeight = height < 0 ? -height : height;
+  const auto expectedMalformedSize = width > 0 && absoluteHeight > 0
+      ? sizeof(BITMAPINFOHEADER) + static_cast<uint64_t>(width) * static_cast<uint64_t>(absoluteHeight) * 4
+      : 0;
+  if (header->biSize > sizeof(BITMAPINFOHEADER) && header->biSize <= data.size() && header->biPlanes == 1 &&
+      header->biBitCount == 32 && header->biCompression == BI_BITFIELDS && expectedMalformedSize == data.size()) {
+    std::string result = data.substr(0, sizeof(BITMAPINFOHEADER));
+    qToLittleEndian<quint32>(sizeof(BITMAPINFOHEADER), reinterpret_cast<quint8 *>(&result[0]));
+    qToLittleEndian<quint32>(BI_RGB, reinterpret_cast<quint8 *>(&result[0]) + 16);
+    result += data.substr(sizeof(BITMAPINFOHEADER));
+    LOG_INFO("normalised malformed macOS V5 clipboard image to BI_RGB");
+    return result;
+  }
+
   // macOS supplies screenshots as a 32-bit BITMAPV5HEADER. Although V5 DIBs
   // are allowed in CF_DIB, Windows can expose a derived CF_DIB with the alpha
   // channel mislabelled as the blue mask. Convert it before placing it on the
