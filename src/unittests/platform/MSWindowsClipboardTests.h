@@ -28,6 +28,7 @@ private Q_SLOTS:
   void has_withNoFormatAdded();
   void getNonEmptyText();
   void isOwnedByDeskflow();
+  void normalisesBitfieldsBitmap();
 
 private:
   Log m_log;

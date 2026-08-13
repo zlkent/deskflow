@@ -9,6 +9,48 @@
 
 #include "base/Log.h"
 
+#include <QtEndian>
+
+namespace {
+constexpr quint32 kMalformedMacRedMask = 0x00ff0000;
+constexpr quint32 kMalformedMacGreenMask = 0x0000ff00;
+constexpr quint32 kMalformedMacBlueMask = 0xff000000;
+
+std::string normaliseBitfieldsDib(const std::string &data)
+{
+  if (data.size() < sizeof(BITMAPINFOHEADER)) {
+    return data;
+  }
+
+  const auto *header = reinterpret_cast<const BITMAPINFOHEADER *>(data.data());
+  if (header->biSize != sizeof(BITMAPINFOHEADER) || header->biPlanes != 1 || header->biBitCount != 32 ||
+      header->biCompression != BI_BITFIELDS || data.size() < sizeof(BITMAPINFOHEADER) + 3 * sizeof(DWORD)) {
+    return data;
+  }
+  const auto *raw = reinterpret_cast<const quint8 *>(data.data());
+  if (qFromLittleEndian<quint32>(raw + sizeof(BITMAPINFOHEADER)) != kMalformedMacRedMask ||
+      qFromLittleEndian<quint32>(raw + sizeof(BITMAPINFOHEADER) + sizeof(DWORD)) != kMalformedMacGreenMask ||
+      qFromLittleEndian<quint32>(raw + sizeof(BITMAPINFOHEADER) + 2 * sizeof(DWORD)) != kMalformedMacBlueMask) {
+    return data;
+  }
+  const size_t pixelOffset = sizeof(BITMAPINFOHEADER) + 3 * sizeof(DWORD);
+  if (pixelOffset > data.size()) {
+    return data;
+  }
+
+  // A macOS screenshot can arrive with its alpha byte incorrectly advertised as
+  // the blue mask. CF_DIB consumers then render opaque black as transparent.
+  // The pixel bytes themselves are ordinary BGRA, so use the canonical BI_RGB
+  // DIB layout and leave other 32-bit bitfield images untouched.
+  std::string result = data.substr(0, sizeof(BITMAPINFOHEADER));
+  qToLittleEndian<quint32>(sizeof(BITMAPINFOHEADER), reinterpret_cast<quint8 *>(&result[0]));
+  qToLittleEndian<quint32>(BI_RGB, reinterpret_cast<quint8 *>(&result[0]) + 16);
+  result += data.substr(pixelOffset);
+  LOG_INFO("normalised 32-bit bitfields clipboard image to BI_RGB");
+  return result;
+}
+} // namespace
+
 //
 // MSWindowsClipboardBitmapConverter
 //
@@ -26,13 +68,15 @@ UINT MSWindowsClipboardBitmapConverter::getWin32Format() const
 HANDLE
 MSWindowsClipboardBitmapConverter::fromIClipboard(const std::string &data) const
 {
+  const auto normalisedData = normaliseBitfieldsDib(data);
+
   // copy to memory handle
-  HGLOBAL gData = GlobalAlloc(GMEM_MOVEABLE | GMEM_DDESHARE, data.size());
+  HGLOBAL gData = GlobalAlloc(GMEM_MOVEABLE | GMEM_DDESHARE, normalisedData.size());
   if (gData != nullptr) {
     // get a pointer to the allocated memory
     char *dst = (char *)GlobalLock(gData);
     if (dst != nullptr) {
-      memcpy(dst, data.data(), data.size());
+      memcpy(dst, normalisedData.data(), normalisedData.size());
       GlobalUnlock(gData);
     } else {
       GlobalFree(gData);

@@ -87,24 +87,6 @@ std::string OSXClipboardBMPConverter::toIClipboard(const std::string &bmp) const
   // so the full DIB (extended header, masks, palette) must reach the receiver. The
   // earlier code truncated to 40 bytes and dropped the BGRA bitfield masks.
   const auto offset = qFromLittleEndian<quint32>(raw + kBmpHeaderDIBPad);
-  const auto dibHeaderSize = qFromLittleEndian<quint32>(raw + kBmpFileHeaderSize);
-
-  // Some macOS screenshot BMPs advertise a BITMAPV5HEADER but retain the
-  // BITMAPINFOHEADER-sized file offset. Their pixel data starts at byte 54,
-  // rather than after the claimed 124-byte DIB header. Forwarding that data as
-  // is makes Windows treat the first pixels as V5 colour masks, so opaque black
-  // is rendered transparent. Make this malformed variant a canonical 32-bit
-  // BI_RGB DIB before sending it to the peer.
-  if (dibHeaderSize > kFallbackPixelOffset && offset == kBmpFileHeaderSize + kFallbackPixelOffset &&
-      bmp.size() >= offset) {
-    std::string result = bmp.substr(kBmpFileHeaderSize, kFallbackPixelOffset);
-    qToLittleEndian<quint32>(kFallbackPixelOffset, reinterpret_cast<quint8 *>(&result[0]));
-    qToLittleEndian<quint32>(0, reinterpret_cast<quint8 *>(&result[0]) + 16); // BI_RGB
-    result += bmp.substr(offset);
-    LOG_INFO("normalised malformed macOS BMP clipboard header (%u bytes, pixel offset %u)", dibHeaderSize, offset);
-    return result;
-  }
-
   const auto naturalOffset = dibPixelOffset(raw + kBmpFileHeaderSize, bmp.size() - kBmpFileHeaderSize);
   std::string result;
   const bool hasGap = naturalOffset != 0 && offset > kBmpFileHeaderSize + naturalOffset && offset <= bmp.size();
