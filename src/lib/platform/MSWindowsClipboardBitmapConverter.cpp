@@ -33,9 +33,10 @@ std::string normaliseBitfieldsDib(const std::string &data)
   const auto width = static_cast<int64_t>(header->biWidth);
   const auto height = static_cast<int64_t>(header->biHeight);
   const auto absoluteHeight = height < 0 ? -height : height;
-  const auto expectedMalformedSize = width > 0 && absoluteHeight > 0
-      ? sizeof(BITMAPINFOHEADER) + static_cast<uint64_t>(width) * static_cast<uint64_t>(absoluteHeight) * 4
-      : 0;
+  const auto expectedMalformedSize =
+      width > 0 && absoluteHeight > 0
+          ? sizeof(BITMAPINFOHEADER) + static_cast<uint64_t>(width) * static_cast<uint64_t>(absoluteHeight) * 4
+          : 0;
   if (header->biSize > sizeof(BITMAPINFOHEADER) && header->biSize <= data.size() && header->biPlanes == 1 &&
       header->biBitCount == 32 && header->biCompression == BI_BITFIELDS && expectedMalformedSize == data.size()) {
     std::string result = data.substr(0, sizeof(BITMAPINFOHEADER));
