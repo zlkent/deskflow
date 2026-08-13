@@ -15,6 +15,7 @@ namespace {
 constexpr quint32 kMalformedMacRedMask = 0x00ff0000;
 constexpr quint32 kMalformedMacGreenMask = 0x0000ff00;
 constexpr quint32 kMalformedMacBlueMask = 0xff000000;
+constexpr quint32 kMacAlphaMask = 0xff000000;
 
 std::string normaliseBitfieldsDib(const std::string &data)
 {
@@ -23,6 +24,22 @@ std::string normaliseBitfieldsDib(const std::string &data)
   }
 
   const auto *header = reinterpret_cast<const BITMAPINFOHEADER *>(data.data());
+
+  // macOS supplies screenshots as a 32-bit BITMAPV5HEADER. Although V5 DIBs
+  // are allowed in CF_DIB, Windows can expose a derived CF_DIB with the alpha
+  // channel mislabelled as the blue mask. Convert it before placing it on the
+  // clipboard, retaining the BGRA pixels but using the universally supported
+  // BITMAPINFOHEADER + BI_RGB form.
+  if (header->biSize >= sizeof(BITMAPV5HEADER) && header->biSize <= data.size() && header->biPlanes == 1 &&
+      header->biBitCount == 32 && header->biCompression == BI_RGB &&
+      qFromLittleEndian<quint32>(reinterpret_cast<const quint8 *>(data.data()) + 52) == kMacAlphaMask) {
+    std::string result = data.substr(0, sizeof(BITMAPINFOHEADER));
+    qToLittleEndian<quint32>(sizeof(BITMAPINFOHEADER), reinterpret_cast<quint8 *>(&result[0]));
+    result += data.substr(header->biSize);
+    LOG_INFO("normalised macOS V5 clipboard image to BI_RGB");
+    return result;
+  }
+
   if (header->biSize != sizeof(BITMAPINFOHEADER) || header->biPlanes != 1 || header->biBitCount != 32 ||
       header->biCompression != BI_BITFIELDS || data.size() < sizeof(BITMAPINFOHEADER) + 3 * sizeof(DWORD)) {
     return data;

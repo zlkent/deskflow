@@ -170,4 +170,35 @@ void MSWindowsClipboardTests::normalisesBitfieldsBitmap()
   GlobalFree(handle);
 }
 
+void MSWindowsClipboardTests::normalisesMacV5Bitmap()
+{
+  constexpr qsizetype headerSize = sizeof(BITMAPV5HEADER);
+  std::string dib(headerSize + 4, '\0');
+  auto *raw = reinterpret_cast<quint8 *>(&dib[0]);
+  qToLittleEndian<quint32>(headerSize, raw);
+  qToLittleEndian<quint32>(1, raw + 4);
+  qToLittleEndian<quint32>(-1, raw + 8);
+  qToLittleEndian<quint16>(1, raw + 12);
+  qToLittleEndian<quint16>(32, raw + 14);
+  qToLittleEndian<quint32>(BI_RGB, raw + 16);
+  qToLittleEndian<quint32>(0xff000000, raw + 52); // V5 alpha mask
+  raw[headerSize] = 0x00;
+  raw[headerSize + 1] = 0x00;
+  raw[headerSize + 2] = 0x00;
+  raw[headerSize + 3] = 0xff;
+
+  MSWindowsClipboardBitmapConverter converter;
+  const auto handle = converter.fromIClipboard(dib);
+  QVERIFY(handle != nullptr);
+  QCOMPARE(GlobalSize(handle), SIZE_T(sizeof(BITMAPINFOHEADER) + 4));
+  const auto *result = static_cast<const quint8 *>(GlobalLock(handle));
+  QVERIFY(result != nullptr);
+  QCOMPARE(qFromLittleEndian<quint32>(result), quint32(sizeof(BITMAPINFOHEADER)));
+  QCOMPARE(qFromLittleEndian<quint32>(result + 16), quint32(BI_RGB));
+  QCOMPARE(result[sizeof(BITMAPINFOHEADER)], quint8(0x00));
+  QCOMPARE(result[sizeof(BITMAPINFOHEADER) + 3], quint8(0xff));
+  GlobalUnlock(handle);
+  GlobalFree(handle);
+}
+
 QTEST_MAIN(MSWindowsClipboardTests)
