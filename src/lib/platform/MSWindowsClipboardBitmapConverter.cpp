@@ -12,36 +12,42 @@
 
 #include <QtEndian>
 
+#include <cstdlib>
+#include <limits>
+
 namespace {
-std::string normaliseMalformedMacDib(const std::string &data)
+bool normaliseMalformedMacDib(const std::string &data, std::string &normalisedData)
 {
   if (data.size() < sizeof(BITMAPINFOHEADER)) {
-    return data;
+    return false;
   }
 
   const auto *header = reinterpret_cast<const BITMAPINFOHEADER *>(data.data());
-  const auto width = static_cast<int64_t>(header->biWidth);
-  const auto height = static_cast<int64_t>(header->biHeight);
-  const auto absoluteHeight = height < 0 ? -height : height;
-  const auto expectedSize =
-      width > 0 && absoluteHeight > 0
-          ? sizeof(BITMAPINFOHEADER) + static_cast<uint64_t>(width) * static_cast<uint64_t>(absoluteHeight) * 4
-          : 0;
+  if (header->biWidth <= 0) {
+    return false;
+  }
+
+  const auto width = static_cast<size_t>(header->biWidth);
+  const auto height = static_cast<size_t>(std::abs(static_cast<int64_t>(header->biHeight)));
+  if (height == 0 || width > (std::numeric_limits<size_t>::max() - sizeof(BITMAPINFOHEADER)) / 4 / height) {
+    return false;
+  }
+  const auto expectedSize = sizeof(BITMAPINFOHEADER) + width * height * 4;
 
   // macOS can describe an INFOHEADER-sized 32-bit pixel payload as a V5 DIB.
   // Windows then interprets the first pixels as V5 colour masks. The pixel
   // bytes are ordinary BGRA, so publish a canonical BI_RGB DIB instead.
   if (header->biSize <= sizeof(BITMAPINFOHEADER) || header->biPlanes != 1 || header->biBitCount != 32 ||
       header->biCompression != BI_BITFIELDS || expectedSize != data.size()) {
-    return data;
+    return false;
   }
 
-  std::string result = data.substr(0, sizeof(BITMAPINFOHEADER));
-  qToLittleEndian<quint32>(sizeof(BITMAPINFOHEADER), reinterpret_cast<quint8 *>(&result[0]));
-  qToLittleEndian<quint32>(BI_RGB, reinterpret_cast<quint8 *>(&result[0]) + 16);
-  result += data.substr(sizeof(BITMAPINFOHEADER));
+  normalisedData = data.substr(0, sizeof(BITMAPINFOHEADER));
+  qToLittleEndian<quint32>(sizeof(BITMAPINFOHEADER), reinterpret_cast<quint8 *>(&normalisedData[0]));
+  qToLittleEndian<quint32>(BI_RGB, reinterpret_cast<quint8 *>(&normalisedData[0]) + 16);
+  normalisedData += data.substr(sizeof(BITMAPINFOHEADER));
   LOG_INFO("normalised malformed macOS clipboard image to BI_RGB");
-  return result;
+  return true;
 }
 } // namespace
 
@@ -62,15 +68,19 @@ UINT MSWindowsClipboardBitmapConverter::getWin32Format() const
 HANDLE
 MSWindowsClipboardBitmapConverter::fromIClipboard(const std::string &data) const
 {
-  const auto normalisedData = normaliseMalformedMacDib(data);
+  std::string normalisedData;
+  const auto *clipboardData = &data;
+  if (normaliseMalformedMacDib(data, normalisedData)) {
+    clipboardData = &normalisedData;
+  }
 
   // copy to memory handle
-  HGLOBAL gData = GlobalAlloc(GMEM_MOVEABLE | GMEM_DDESHARE, normalisedData.size());
+  HGLOBAL gData = GlobalAlloc(GMEM_MOVEABLE | GMEM_DDESHARE, clipboardData->size());
   if (gData != nullptr) {
     // get a pointer to the allocated memory
     char *dst = (char *)GlobalLock(gData);
     if (dst != nullptr) {
-      memcpy(dst, normalisedData.data(), normalisedData.size());
+      memcpy(dst, clipboardData->data(), clipboardData->size());
       GlobalUnlock(gData);
     } else {
       GlobalFree(gData);
