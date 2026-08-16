@@ -203,6 +203,7 @@ void MSWindowsClipboardTests::normalisesMacV5Bitmap()
 
 void MSWindowsClipboardTests::normalisesMalformedMacV5Bitmap()
 {
+  // A 1x1 top-down macOS DIB that incorrectly declares a V5 header.
   constexpr qsizetype headerSize = sizeof(BITMAPINFOHEADER);
   std::string dib(headerSize + 4, '\0');
   auto *raw = reinterpret_cast<quint8 *>(&dib[0]);
