@@ -1,13 +1,11 @@
-# Windows x64-only continuous build for the zlkent/deskflow test fork.
-name: Windows x64 Continuous Build
+# macOS source validation for the Pinyin input-source candidate.
+name: macOS input-source validation
 
 on:
-  push:
-    branches: [master]
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -16,59 +14,30 @@ concurrency:
 env:
   GIT_SHA: ${{ github.sha }}
   PACKAGE_PREFIX: deskflow
-  CMAKE_CONFIGURE: cmake -Bbuild -DCMAKE_BUILD_TYPE=Release -DSKIP_BUILD_TESTS=ON -DCMAKE_COMPILE_WARNING_AS_ERROR=ON
+  CMAKE_CONFIGURE: cmake -Bbuild -G Ninja -DCMAKE_BUILD_TYPE=Release -DSKIP_BUILD_TESTS=ON -DCMAKE_COMPILE_WARNING_AS_ERROR=ON -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=14
 
 jobs:
-  windows-x64:
-    name: Windows x64
-    runs-on: windows-2022
+  macos-arm64:
+    name: macOS ARM64
+    runs-on: macos-15
     timeout-minutes: 30
 
     steps:
       - name: Checkout
         uses: sithlord48/fancy-checkout@v2
 
-      - name: Setup VC++ environment
-        uses: TheMrMilchmann/setup-msvc-dev@v4
-        with:
-          arch: amd64
-          spectre: true
-
       - name: Install dependencies
         id: get-deps
         uses: ./.github/actions/install-dependencies
         with:
-          qt-version: 6.10.3
-          vcpkg-triplet: x64-windows-release
+          qt-version: 6.11.1
+          vcpkg-triplet: arm64-osx-release
 
       - name: Get version
         uses: ./.github/actions/get-version
 
       - name: Configure
-        run: ${{ env.CMAKE_CONFIGURE }} -G Ninja ${{ steps.get-deps.outputs.vcpkg-cmake-config }} -DPACKAGE_VERSION_LABEL="${{ env.DESKFLOW_PACKAGE_VERSION }}"
+        run: ${{ env.CMAKE_CONFIGURE }} ${{ steps.get-deps.outputs.vcpkg-cmake-config }} -DPACKAGE_VERSION_LABEL="${{ env.DESKFLOW_PACKAGE_VERSION }}"
 
-      - name: Build package
-        run: cmake --build build --config Release -j8 --target package
-
-      - name: Run tests
-        uses: ./.github/actions/run-tests
-        timeout-minutes: 5
-        with:
-          job: windows-2022-x64
-
-      - name: Publish continuous Windows x64 build
-        if: github.ref == 'refs/heads/master'
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          if (gh release view continuous 2>$null) {
-            gh release delete continuous --cleanup-tag --yes
-          }
-          $files = Get-ChildItem -Path build -Filter 'deskflow-*' -File
-          if ($files.Count -eq 0) {
-            throw 'Windows package was not generated'
-          }
-          $changes = git log --abbrev=8 --abbrev-commit --pretty=format:' - %s(%h) by %an' continuous..HEAD
-          Set-Content -Path changelog.txt -Value "## Latest Changes:`n$changes"
-          gh release create continuous $files.FullName --title "Continuous Windows x64 v${{ env.DESKFLOW_VERSION }}" --prerelease --notes-file changelog.txt
+      - name: Build
+        run: cmake --build build --config Release -j8

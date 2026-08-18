@@ -58,15 +58,13 @@ std::vector<std::string> AppUtilUnix::getKeyboardLayoutList()
   layoutLangCodes = X11LayoutsParser::getX11LanguageList(m_evdev);
 
 #elif defined(Q_OS_MAC)
-  CFStringRef keys[] = {kTISPropertyInputSourceCategory};
-  CFStringRef values[] = {kTISCategoryKeyboardInputSource};
-  AutoCFDictionary dict(
-      CFDictionaryCreate(nullptr, (const void **)keys, (const void **)values, 1, nullptr, nullptr), CFRelease
-  );
+  // Apple's input methods, including Pinyin, are not always classified as
+  // kTISCategoryKeyboardInputSource. Enumerate all enabled sources and retain
+  // only sources that publish a language below.
   AutoCFArray kbds(nullptr, CFRelease);
   {
     std::lock_guard<std::mutex> lock(g_tisMutex);
-    kbds = AutoCFArray(TISCreateInputSourceList(dict.get(), false), CFRelease);
+    kbds = AutoCFArray(TISCreateInputSourceList(nullptr, false), CFRelease);
   }
 
   for (CFIndex i = 0; i < CFArrayGetCount(kbds.get()); ++i) {
