@@ -31,6 +31,7 @@ private Q_SLOTS:
   void normalisesBitfieldsBitmap();
   void normalisesMacV5Bitmap();
   void normalisesMalformedMacV5Bitmap();
+  void preservesHealthyMacV5Bitmap();
 
 private:
   Log m_log;
