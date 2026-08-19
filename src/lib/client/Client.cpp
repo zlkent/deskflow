@@ -342,6 +342,9 @@ void Client::setOptions(const OptionsList &options)
       index++;
       if (index != options.end()) {
         m_maximumClipboardSize = *index;
+        // The server may send clipboard data immediately after these options.
+        // Keep the receive cap aligned with the advertised server limit.
+        m_maximumClipboardReceiveSize = m_maximumClipboardSize * 1024;
       }
     } else if (id == kOptionRelativeMouseMoves) {
       index++;
