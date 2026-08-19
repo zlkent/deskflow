@@ -97,9 +97,9 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if gh release view continuous; then
-            gh release delete continuous --cleanup-tag --yes
+          if gh release view continuous --repo "$GITHUB_REPOSITORY"; then
+            gh release delete continuous --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes
           fi
           files=$(find . -maxdepth 1 -type f -name 'deskflow-*')
           test -n "$files"
-          gh release create continuous $files --title 'Continuous Windows x64 and macOS ARM64' --prerelease --notes 'Latest automated Windows x64 and macOS ARM64 builds.'
+          gh release create continuous $files --repo "$GITHUB_REPOSITORY" --title 'Continuous Windows x64 and macOS ARM64' --prerelease --notes 'Latest automated Windows x64 and macOS ARM64 builds.'
