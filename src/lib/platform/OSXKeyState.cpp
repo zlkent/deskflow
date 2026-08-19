@@ -497,7 +497,7 @@ int32_t OSXKeyState::pollActiveGroup() const
     return i->second;
   }
 
-  LOG_WARN("can't get the active group, use the first group instead");
+  LOG_WARN("can't get the active group for input source id \"%s\", use the first group instead", id.c_str());
 
   return 0;
 }
@@ -528,6 +528,7 @@ void OSXKeyState::getKeyMap(deskflow::KeyMap &keyMap)
       std::lock_guard<std::mutex> lock(g_tisMutex);
       if (const auto id = inputSourceId(keyboardLayout); !id.empty()) {
         m_groupMap[id] = g;
+        LOG_INFO("keyboard group %d input source id \"%s\"", g, id.c_str());
       }
     }
   }
