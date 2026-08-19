@@ -70,8 +70,6 @@ MainWindow::MainWindow()
       m_menuView{new QMenu(this)},
       m_menuHelp{new QMenu(this)},
       m_actionAbout{new QAction(this)},
-      m_actionClearSettings{new QAction(this)},
-      m_actionReportBug{new QAction(this)},
       m_actionMinimize{new QAction(this)},
       m_actionQuit{new QAction(this)},
       m_actionTrayQuit{new QAction(this)},
@@ -107,9 +105,6 @@ MainWindow::MainWindow()
   m_actionTrayQuit->setIcon(QIcon::fromTheme("application-exit"));
   m_actionTrayQuit->setMenuRole(QAction::NoRole);
 
-  m_actionClearSettings->setIcon(QIcon::fromTheme(QStringLiteral("edit-clear-all")));
-  m_actionClearSettings->setMenuRole(QAction::NoRole);
-
   m_actionSettings->setIcon(QIcon::fromTheme(QStringLiteral("configure")));
   m_actionSettings->setMenuRole(QAction::PreferencesRole);
 
@@ -122,9 +117,6 @@ MainWindow::MainWindow()
 
   m_actionStopCore->setIcon(QIcon::fromTheme(QIcon::ThemeIcon::ProcessStop));
   m_actionStopCore->setMenuRole(QAction::NoRole);
-
-  m_actionReportBug->setIcon(QIcon::fromTheme(QStringLiteral("tools-report-bug")));
-  m_actionReportBug->setMenuRole(QAction::NoRole);
 
   m_actionShowHelp->setIcon(QIcon::fromTheme(QStringLiteral("question")));
   m_actionShowHelp->setMenuRole(QAction::NoRole);
@@ -263,8 +255,6 @@ void MainWindow::connectSlots()
   connect(&m_coreProcess, &CoreProcess::securityLevelChanged, m_statusBar, &StatusBar::setSecurityLevel);
 
   connect(m_actionAbout, &QAction::triggered, this, &MainWindow::openAboutDialog);
-  connect(m_actionClearSettings, &QAction::triggered, this, &MainWindow::clearSettings);
-  connect(m_actionReportBug, &QAction::triggered, this, &MainWindow::openHelpUrl);
   connect(m_actionMinimize, &QAction::triggered, this, &MainWindow::hide);
 
   connect(m_actionQuit, &QAction::triggered, this, &MainWindow::close);
@@ -434,10 +424,7 @@ void MainWindow::stopCore()
 
 void MainWindow::clearSettings()
 {
-  if (!messages::showClearSettings(this)) {
-    qDebug() << "clear settings cancelled";
-    return;
-  }
+  qDebug() << "clearing settings";
 
   m_networkMonitor->stopMonitoring();
 
@@ -472,11 +459,6 @@ void MainWindow::openAboutDialog()
   about.exec();
 }
 
-void MainWindow::openHelpUrl() const
-{
-  QDesktopServices::openUrl(QUrl(kUrlHelp));
-}
-
 void MainWindow::openGetNewVersionUrl() const
 {
   QDesktopServices::openUrl(QUrl(kUrlDownload));
@@ -486,8 +468,10 @@ void MainWindow::openSettings()
 {
   auto dialog = SettingsDialog(this, m_serverConfig);
 
+  connect(&dialog, &SettingsDialog::requestRemoveAllSettings, this, &MainWindow::clearSettings, Qt::UniqueConnection);
   if (dialog.exec() == QDialog::Accepted) {
     Settings::save();
+    disconnect(&dialog, &SettingsDialog::requestRemoveAllSettings, nullptr, nullptr);
 
     applyConfig();
 
@@ -685,9 +669,6 @@ void MainWindow::createMenuBar()
 
   m_menuHelp->addAction(m_actionAbout);
   m_menuHelp->addAction(m_actionShowHelp);
-  m_menuHelp->addAction(m_actionReportBug);
-  m_menuHelp->addSeparator();
-  m_menuHelp->addAction(m_actionClearSettings);
 
   auto menuBar = new QMenuBar(this);
   menuBar->addMenu(m_menuFile);
@@ -1071,8 +1052,6 @@ void MainWindow::updateText()
   m_menuView->setTitle(tr("&View"));
   m_menuHelp->setTitle(tr("&Help"));
 
-  m_actionClearSettings->setText(tr("Clear settings"));
-  m_actionReportBug->setText(tr("Report a Bug"));
   m_actionMinimize->setText(tr("&Minimize to tray"));
   m_actionQuit->setText(tr("&Quit"));
   m_actionTrayQuit->setText(tr("&Quit"));

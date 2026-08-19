@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: (C) 2024 Deskflow Developers
+# SPDX-FileCopyrightText: (C) 2024 - 2026 Deskflow Developers
 # SPDX-FileCopyrightText: (C) 2024 Symless Ltd
 # SPDX-License-Identifier: MIT
 
@@ -120,21 +120,14 @@ add_library(${target} STATIC
   widgets/StatusBar.h
   widgets/TrashScreenWidget.cpp
   widgets/TrashScreenWidget.h
+  widgets/SettingsDialogButtonBox.cpp
+  widgets/SettingsDialogButtonBox.h
 )
 
-target_link_libraries(
-  ${target}
-  common
-  platform
-  Qt6::Core
-  Qt6::Widgets
-  Qt6::Network)
-
-if(WIN32)
-  target_link_libraries(
-    ${target}
-    base
-    arch
+target_link_libraries(${target}
+  PUBLIC
+    common
+    platform
     net
-  )
-endif()
+    Qt6::Widgets
+)

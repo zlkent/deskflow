@@ -1,5 +1,6 @@
 /*
  * Deskflow -- mouse and keyboard sharing utility
+ * SPDX-FileCopyrightText: (C) 2026 Deskflow Developers
  * SPDX-FileCopyrightText: (C) 2012 - 2016 Synergy App Ltd
  * SPDX-FileCopyrightText: (C) 2002 Chris Schoeneman
  * SPDX-License-Identifier: GPL-2.0-only WITH LicenseRef-OpenSSL-Exception
@@ -11,14 +12,12 @@
 #include "common/PlatformInfo.h"
 
 #if WINAPI_XWINDOWS
-#include "deskflow/unix/X11LayoutsParser.h"
 #include <X11/XKBlib.h>
+#include <deskflow/unix/XkbLayoutsParser.h>
 #elif defined(Q_OS_MAC)
 #include <Carbon/Carbon.h>
 #include <platform/OSXAutoTypes.h>
 #endif
-
-#include <filesystem>
 
 AppUtilUnix::AppUtilUnix(const IEventQueue *)
 {
@@ -45,28 +44,16 @@ std::vector<std::string> AppUtilUnix::getKeyboardLayoutList()
   std::vector<std::string> layoutLangCodes;
 
 #if WINAPI_XWINDOWS
-  // Check /usr/local first used on bsd and some systems
-  std::vector<std::string> evdev_candidate = {
-      "/usr/share/X11/xkb/rules/evdev.xml",       // Linux
-      "/usr/local/share/X11/xkb/rules/evdev.xml", // FreeBSD, DragonFlyBSD
-      "/usr/X11R7/lib/X11/xkb/rules/evdev.xml",   // NetBSD
-      "/usr/X11R6/share/X11/xkb/rules/evdev.xml", // OpenBSD
-  };
-
-  for (auto it = evdev_candidate.begin(); it != evdev_candidate.end() && !std::filesystem::exists(m_evdev = *it); it++)
-    ;
-  layoutLangCodes = X11LayoutsParser::getX11LanguageList(m_evdev);
+  layoutLangCodes = XkbLayoutsParser::getXkbLanguageList();
 
 #elif defined(Q_OS_MAC)
-  CFStringRef keys[] = {kTISPropertyInputSourceCategory};
-  CFStringRef values[] = {kTISCategoryKeyboardInputSource};
-  AutoCFDictionary dict(
-      CFDictionaryCreate(nullptr, (const void **)keys, (const void **)values, 1, nullptr, nullptr), CFRelease
-  );
+  // Apple's input methods, including Pinyin, are not always classified as
+  // kTISCategoryKeyboardInputSource. Enumerate all enabled sources and retain
+  // only sources that publish a language below.
   AutoCFArray kbds(nullptr, CFRelease);
   {
     std::lock_guard<std::mutex> lock(g_tisMutex);
-    kbds = AutoCFArray(TISCreateInputSourceList(dict.get(), false), CFRelease);
+    kbds = AutoCFArray(TISCreateInputSourceList(nullptr, false), CFRelease);
   }
 
   for (CFIndex i = 0; i < CFArrayGetCount(kbds.get()); ++i) {
@@ -151,7 +138,7 @@ std::string AppUtilUnix::getCurrentLanguageCode()
   XFree(kbdDescr);
   XCloseDisplay(display);
 
-  result = X11LayoutsParser::convertLayoutToISO(m_evdev, result);
+  result = XkbLayoutsParser::convertLayoutToISO(result);
 
 #elif defined(Q_OS_MAC)
   AutoTISInputSourceRef source(nullptr, CFRelease);

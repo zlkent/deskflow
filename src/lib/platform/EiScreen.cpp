@@ -28,7 +28,8 @@
 #include <unistd.h>
 #include <vector>
 
-// Values are in pixels
+// Values are in fractional wheel-click units (1.0 == one full 120-unit click) for trackpad
+// and pixels in scroll wheel events.
 struct ScrollRemainder
 {
   double x;
@@ -762,14 +763,12 @@ void EiScreen::onButtonEvent(ei_event *event)
 
 void EiScreen::onPointerScrollEvent(ei_event *event)
 {
-  // Ratio of 10 pixels == one wheel click because that's what mutter/gtk
-  // use (for historical reasons).
-  static const int s_pixelsPerWheelClick = 10;
-  // Our logical wheel clicks are multiples 120, so we
-  // convert between the two and keep the remainders because
-  // we will very likely get subpixel scroll events.
-  // This means a single pixel is 120/s_pixelToWheelRation in wheel values.
-  const int s_pixelToWheelRatio = s_scrollDelta / s_pixelsPerWheelClick;
+  // Smooth scroll deltas are in pixels. We accumulate them as fractional
+  // wheel-click units and only send full wheel clicks (120 units each)
+  // to the client. Sub-120 fractional clicks are silently ignored by
+  // compositors on the receiving end, so accumulating full clicks avoids
+  // flooding the network with events that the client drops anyway.
+  static const double s_wheelClicksPerPixel = 0.1; // 10 pixels == 1 full wheel click
 
   assert(m_isPrimary);
 
@@ -785,35 +784,37 @@ void EiScreen::onPointerScrollEvent(ei_event *event)
     ei_device_set_user_data(device, remainder);
   }
 
-  dx += remainder->x;
-  dy += remainder->y;
+  // Accumulate smooth scroll as fractional wheel clicks (1.0 == 120 units)
+  double accX = remainder->x + dx * s_wheelClicksPerPixel;
+  double accY = remainder->y + dy * s_wheelClicksPerPixel;
 
-  double x;
-  double y;
-  double rx = modf(dx, &x);
-  double ry = modf(dy, &y);
-
-  assert(!std::isnan(x) && !std::isinf(x));
-  assert(!std::isnan(y) && !std::isinf(y));
+  // Only dispatch full wheel clicks. Use trunc (toward zero) not floor,
+  // because floor(-0.3) == -1 which would fire a spurious click.
+  double fullClicksX = std::trunc(accX);
+  double fullClicksY = std::trunc(accY);
 
   // libei and deskflow seem to use opposite directions, so we have
   // to send the opposite of the value reported by EI if we want to
   // remain compatible with other platforms (including X11).
-  if (x != 0 || y != 0)
+  if (fullClicksX != 0 || fullClicksY != 0) {
     sendEvent(
         EventTypes::PrimaryScreenWheel,
-        WheelInfo::alloc((int32_t)-x * s_pixelToWheelRatio, (int32_t)-y * s_pixelToWheelRatio)
+        WheelInfo::alloc(
+            static_cast<int32_t>(-fullClicksX) * s_scrollDelta, static_cast<int32_t>(-fullClicksY) * s_scrollDelta
+        )
     );
+    accX -= fullClicksX;
+    accY -= fullClicksY;
+  }
 
-  remainder->x = rx;
-  remainder->y = ry;
+  remainder->x = accX;
+  remainder->y = accY;
 }
 
 void EiScreen::onPointerScrollDiscreteEvent(ei_event *event)
 {
   // both libei and deskflow use multiples of 120 to represent
-  // one scroll wheel click event so we can just forward things
-  // as-is.
+  // one scroll wheel click event
 
   assert(m_isPrimary);
 
@@ -822,10 +823,26 @@ void EiScreen::onPointerScrollDiscreteEvent(ei_event *event)
 
   LOG_VERBOSE("event: scroll discrete (%d, %d)", dx, dy);
 
+  // accumulate fractional ticks, then emit 120 units at a time
+  struct ei_device *device = ei_event_get_device(event);
+  auto *remainder = static_cast<struct ScrollRemainder *>(ei_device_get_user_data(device));
+  if (!remainder) {
+    remainder = new ScrollRemainder();
+    ei_device_set_user_data(device, remainder);
+  }
+
+  double ax = remainder->x + dx;
+  double ay = remainder->y + dy;
+  auto cx = static_cast<int32_t>(ax / s_scrollDelta) * s_scrollDelta;
+  auto cy = static_cast<int32_t>(ay / s_scrollDelta) * s_scrollDelta;
+  remainder->x = ax - cx;
+  remainder->y = ay - cy;
+
   // libei and deskflow seem to use opposite directions, so we have
   // to send the opposite of the value reported by EI if we want to
   // remain compatible with other platforms (including X11).
-  sendEvent(EventTypes::PrimaryScreenWheel, WheelInfo::alloc(-dx, -dy));
+  if (cx != 0 || cy != 0)
+    sendEvent(EventTypes::PrimaryScreenWheel, WheelInfo::alloc(-cx, -cy));
 }
 
 void EiScreen::onMotionEvent(ei_event *event)
