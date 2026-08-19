@@ -963,7 +963,7 @@ bool OSXKeyState::getGroups(AutoCFArray &groups) const
     if (currentKeyboardLayout) {
       const auto currentId = inputSourceId(currentKeyboardLayout.get());
       for (CFIndex i = 0; i < CFArrayGetCount(kbds.get()); ++i) {
-        const auto source = static_cast<TISInputSourceRef>(CFArrayGetValueAtIndex(kbds.get(), i));
+        const auto source = (TISInputSourceRef)CFArrayGetValueAtIndex(kbds.get(), i);
         if (inputSourceId(source) == currentId) {
           hasCurrentKeyboardLayout = true;
           break;
