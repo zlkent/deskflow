@@ -19,6 +19,19 @@
 #include <platform/OSXAutoTypes.h>
 #endif
 
+#if defined(Q_OS_MAC)
+namespace {
+std::string primaryLanguageCode(const char *languageTag)
+{
+  std::string languageCode(languageTag);
+  if (const auto separator = languageCode.find_first_of("-_"); separator != std::string::npos) {
+    languageCode.resize(separator);
+  }
+  return languageCode;
+}
+} // namespace
+#endif
+
 AppUtilUnix::AppUtilUnix(const IEventQueue *)
 {
   // do nothing
@@ -70,7 +83,7 @@ std::vector<std::string> AppUtilUnix::getKeyboardLayoutList()
         continue;
       }
 
-      std::string langCode(temporaryCString);
+      std::string langCode = primaryLanguageCode(temporaryCString);
       if (langCode.size() == 2 &&
           std::find(layoutLangCodes.begin(), layoutLangCodes.end(), langCode) == layoutLangCodes.end()) {
         layoutLangCodes.push_back(langCode);
@@ -156,7 +169,7 @@ std::string AppUtilUnix::getCurrentLanguageCode()
       continue;
     }
 
-    result = std::string(temporaryCString);
+    result = primaryLanguageCode(temporaryCString);
     break;
   }
 #endif
