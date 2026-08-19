@@ -950,11 +950,34 @@ bool OSXKeyState::getGroups(AutoCFArray &groups) const
     kbds = AutoCFArray(TISCreateInputSourceList(dict.get(), false), CFRelease);
   }
 
-  if (CFArrayGetCount(kbds.get()) > 0) {
-    groups = std::move(kbds);
-  } else {
+  if (CFArrayGetCount(kbds.get()) == 0) {
     LOG_VERBOSE("can't get keyboard layouts");
     return false;
+  }
+
+  AutoTISInputSourceRef currentKeyboardLayout(nullptr, CFRelease);
+  bool hasCurrentKeyboardLayout = false;
+  {
+    std::lock_guard<std::mutex> lock(g_tisMutex);
+    currentKeyboardLayout = AutoTISInputSourceRef(TISCopyCurrentKeyboardLayoutInputSource(), CFRelease);
+    if (currentKeyboardLayout) {
+      const auto currentId = inputSourceId(currentKeyboardLayout.get());
+      for (CFIndex i = 0; i < CFArrayGetCount(kbds.get()); ++i) {
+        const auto source = static_cast<TISInputSourceRef>(CFArrayGetValueAtIndex(kbds.get(), i));
+        if (inputSourceId(source) == currentId) {
+          hasCurrentKeyboardLayout = true;
+          break;
+        }
+      }
+    }
+  }
+
+  if (currentKeyboardLayout && !hasCurrentKeyboardLayout) {
+    auto expandedGroups = AutoCFArray(CFArrayCreateMutableCopy(nullptr, 0, kbds.get()), CFRelease);
+    CFArrayAppendValue((CFMutableArrayRef)expandedGroups.get(), currentKeyboardLayout.get());
+    groups = std::move(expandedGroups);
+  } else {
+    groups = std::move(kbds);
   }
 
   return true;
